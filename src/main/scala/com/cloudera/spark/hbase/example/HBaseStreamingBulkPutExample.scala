@@ -63,7 +63,7 @@ object HBaseStreamingBulkPutExample {
       (putRecord) => {
         if (putRecord.length() > 0) {
           val put = new Put(Bytes.toBytes(putRecord))
-          put.add(Bytes.toBytes("c"), Bytes.toBytes("foo"), Bytes.toBytes("bar"))
+          put.addColumn(Bytes.toBytes("c"), Bytes.toBytes("foo"), Bytes.toBytes("bar"))
           put
         } else {
           null

@@ -56,7 +56,7 @@ object HBaseBulkPutHdfsTmpExample {
       tableName,
       (putRecord) => {
         val put = new Put(putRecord._1)
-        putRecord._2.foreach((putValue) => put.add(putValue._1, putValue._2, putValue._3))
+        putRecord._2.foreach((putValue) => put.addColumn(putValue._1, putValue._2, putValue._3))
         put
       },
       true);

@@ -21,13 +21,11 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.rdd.RDD
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.hbase.client.HConnectionManager
 import org.apache.hadoop.hbase.client.Scan
 import org.apache.hadoop.hbase.client.Get
 import java.util.ArrayList
 import org.apache.hadoop.hbase.client.Result
 import scala.reflect.ClassTag
-import org.apache.hadoop.hbase.client.HConnection
 import org.apache.hadoop.hbase.client.Put
 import org.apache.hadoop.hbase.client.Increment
 import org.apache.hadoop.hbase.client.Delete
@@ -43,6 +41,11 @@ import org.apache.hadoop.security.UserGroupInformation.AuthenticationMethod
 import org.apache.hadoop.hbase.mapreduce.TableInputFormat
 import org.apache.hadoop.hbase.mapreduce.IdentityTableMapper
 import org.apache.hadoop.fs.{Path, FileSystem}
+import org.apache.hadoop.hbase.client.ConnectionFactory
+import org.apache.hadoop.hbase.client.Connection
+import org.apache.hadoop.hbase.TableName
+import org.apache.hadoop.hbase.client.BufferedMutator
+import org.apache.hadoop.hbase.CellUtil
 
 
 /**
@@ -96,7 +99,7 @@ class HBaseContext(@transient sc: SparkContext,
    *             with HBase
    */
   def foreachPartition[T](rdd: RDD[T],
-                          f: (Iterator[T], HConnection) => Unit) = {
+                          f: (Iterator[T], Connection) => Unit) = {
     rdd.foreachPartition(
       it => hbaseForeachPartition(broadcastedConf, it, f))
   }
@@ -115,8 +118,8 @@ class HBaseContext(@transient sc: SparkContext,
    *                 interact with HBase
    */
   def foreachRDD[T](dstream: DStream[T],
-                    f: (Iterator[T], HConnection) => Unit) = {
-    dstream.foreach((rdd, time) => {
+                    f: (Iterator[T], Connection) => Unit) = {
+    dstream.foreachRDD((rdd, time) => {
       foreachPartition(rdd, f)
     })
   }
@@ -140,7 +143,7 @@ class HBaseContext(@transient sc: SparkContext,
    *             function just like normal mapPartition
    */
   def mapPartition[T, R: ClassTag](rdd: RDD[T],
-                                   mp: (Iterator[T], HConnection) => Iterator[R]): RDD[R] = {
+                                   mp: (Iterator[T], Connection) => Iterator[R]): RDD[R] = {
 
     rdd.mapPartitions[R](it => hbaseMapPartition[T, R](broadcastedConf,
       it,
@@ -154,7 +157,7 @@ class HBaseContext(@transient sc: SparkContext,
    * This function differs from the original in that it offers the
    * developer access to a already connected HConnection object
    *
-   * Note: Do not close the HConnection object.  All HConnection
+   * Note: Do not close the Connection object.  All Connection
    * management is handled outside this method
    *
    * Note: Make sure to partition correctly to avoid memory issue when
@@ -168,7 +171,7 @@ class HBaseContext(@transient sc: SparkContext,
    *                 definition function just like normal mapPartition
    */
   def streamMap[T, U: ClassTag](dstream: DStream[T],
-                                mp: (Iterator[T], HConnection) => Iterator[U]): DStream[U] = {
+                                mp: (Iterator[T], Connection) => Iterator[U]): DStream[U] = {
 
     dstream.mapPartitions(it => hbaseMapPartition[T, U](
       broadcastedConf,
@@ -197,12 +200,13 @@ class HBaseContext(@transient sc: SparkContext,
       it => hbaseForeachPartition[T](
         broadcastedConf,
         it,
-        (iterator, hConnection) => {
-          val htable = hConnection.getTable(tableName)
-          htable.setAutoFlush(autoFlush, true)
-          iterator.foreach(T => htable.put(f(T)))
-          htable.flushCommits()
-          htable.close()
+        (iterator, connection) => {
+          val tableNameObj = TableName.valueOf(tableName)
+          val table = connection.getTable(tableNameObj)
+          val mutator = connection.getBufferedMutator(tableNameObj)
+          iterator.foreach(T => table.put(f(T)))
+          mutator.flush()
+          table.close()
         }))
   }
 
@@ -256,7 +260,7 @@ class HBaseContext(@transient sc: SparkContext,
                        tableName: String,
                        f: (T) => Put,
                        autoFlush: Boolean) = {
-    dstream.foreach((rdd, time) => {
+    dstream.foreachRDD((rdd, time) => {
       bulkPut(rdd, tableName, f, autoFlush)
     })
   }
@@ -280,18 +284,16 @@ class HBaseContext(@transient sc: SparkContext,
       it => hbaseForeachPartition[T](
         broadcastedConf,
         it,
-        (iterator, hConnection) => {
-
-
-          val htable = hConnection.getTable(tableName)
-          htable.setAutoFlush(autoFlush, true)
-
+        (iterator, connection) => {
+          val tableNameObj = TableName.valueOf(tableName)
+          val table = connection.getTable(tableNameObj)
+          val mutator = connection.getBufferedMutator(tableNameObj)
           iterator.foreach(T => {
             val checkPut = f(T)
-            htable.checkAndPut(checkPut._1, checkPut._2, checkPut._3, checkPut._4, checkPut._5)
+            table.checkAndPut(checkPut._1, checkPut._2, checkPut._3, checkPut._4, checkPut._5)
           })
-          htable.flushCommits()
-          htable.close()
+          mutator.flush()
+          table.close()
         }))
   }
 
@@ -311,7 +313,7 @@ class HBaseContext(@transient sc: SparkContext,
    * @param autoFlush        If autoFlush should be turned on
    */
   def streamBulkCheckAndPut[T](dstream: DStream[T], tableName: String, f: (T) => (Array[Byte], Array[Byte], Array[Byte], Array[Byte], Put), autoFlush: Boolean) {
-    dstream.foreach((rdd, time) => {
+    dstream.foreachRDD((rdd, time) => {
       bulkCheckAndPut(rdd, tableName, f, autoFlush)
     })
   }
@@ -371,15 +373,16 @@ class HBaseContext(@transient sc: SparkContext,
       it => hbaseForeachPartition[T](
         broadcastedConf,
         it,
-        (iterator, hConnection) => {
-          val htable = hConnection.getTable(tableName)
-
+        (iterator, connection) => {
+          val tableNameObj = TableName.valueOf(tableName)
+          val table = connection.getTable(tableNameObj)
+          val mutator = connection.getBufferedMutator(tableNameObj)
           iterator.foreach(T => {
             val checkDelete = f(T)
-            htable.checkAndDelete(checkDelete._1, checkDelete._2, checkDelete._3, checkDelete._4, checkDelete._5)
+            table.checkAndDelete(checkDelete._1, checkDelete._2, checkDelete._3, checkDelete._4, checkDelete._5)
           })
-          htable.flushCommits()
-          htable.close()
+          mutator.flush()
+          table.close()
         }))
   }
 
@@ -444,7 +447,7 @@ class HBaseContext(@transient sc: SparkContext,
   def streamBulkCheckAndDelete[T](dstream: DStream[T],
                                   tableName: String,
                                   f: (T) => (Array[Byte], Array[Byte], Array[Byte], Array[Byte], Delete)) {
-    dstream.foreach((rdd, time) => {
+    dstream.foreachRDD((rdd, time) => {
       bulkCheckDelete(rdd, tableName, f)
     })
   }
@@ -459,21 +462,21 @@ class HBaseContext(@transient sc: SparkContext,
       it => hbaseForeachPartition[T](
         broadcastedConf,
         it,
-        (iterator, hConnection) => {
-          val htable = hConnection.getTable(tableName)
+        (iterator, connection) => {
+          val table = connection.getTable(TableName.valueOf(tableName));
           val mutationList = new ArrayList[Mutation]
           iterator.foreach(T => {
             mutationList.add(f(T))
             if (mutationList.size >= batchSize) {
-              htable.batch(mutationList)
+              table.batch(mutationList, new Array[Object](mutationList.size()))
               mutationList.clear()
             }
           })
           if (mutationList.size() > 0) {
-            htable.batch(mutationList)
+            table.batch(mutationList, new Array[Object](mutationList.size()))
             mutationList.clear()
           }
-          htable.close()
+          table.close()
         }))
   }
 
@@ -486,7 +489,7 @@ class HBaseContext(@transient sc: SparkContext,
                                     tableName: String,
                                     f: (T) => Mutation,
                                     batchSize: Integer) = {
-    dstream.foreach((rdd, time) => {
+    dstream.foreachRDD((rdd, time) => {
       bulkMutation(rdd, tableName, f, batchSize)
     })
   }
@@ -597,12 +600,12 @@ class HBaseContext(@transient sc: SparkContext,
       tableName,
       scans,
       (r: (ImmutableBytesWritable, Result)) => {
-        val it = r._2.list().iterator()
+        val it = r._2.listCells().iterator()
         val list = new ArrayList[(Array[Byte], Array[Byte], Array[Byte])]()
 
         while (it.hasNext()) {
           val kv = it.next()
-          list.add((kv.getFamily(), kv.getQualifier(), kv.getValue()))
+          list.add((CellUtil.cloneFamily(kv), CellUtil.cloneQualifier(kv), CellUtil.cloneValue(kv)))
         }
 
         (r._1.copyBytes(), list)
@@ -624,14 +627,14 @@ class HBaseContext(@transient sc: SparkContext,
   private def hbaseForeachPartition[T](
                                         configBroadcast: Broadcast[SerializableWritable[Configuration]],
                                         it: Iterator[T],
-                                        f: (Iterator[T], HConnection) => Unit) = {
+                                        f: (Iterator[T], Connection) => Unit) = {
 
     val config = getConf(configBroadcast)
 
 
     applyCreds(configBroadcast)
     // specify that this is a proxy user
-    val hConnection = HConnectionManager.createConnection(config)
+    val hConnection = ConnectionFactory.createConnection(config)
     f(it, hConnection)
     hConnection.close()
 
@@ -646,9 +649,6 @@ class HBaseContext(@transient sc: SparkContext,
     } else if (tmpHdfsConfgFile != null) {
 
       val fs = FileSystem.newInstance(SparkHadoopUtil.get.conf)
-
-
-
       val inputStream = fs.open(new Path(tmpHdfsConfgFile))
       tmpHdfsConfiguration = new Configuration(false)
       tmpHdfsConfiguration.readFields(inputStream)
@@ -679,14 +679,13 @@ class HBaseContext(@transient sc: SparkContext,
   private def hbaseMapPartition[K, U](
                                        configBroadcast: Broadcast[SerializableWritable[Configuration]],
                                        it: Iterator[K],
-                                       mp: (Iterator[K], HConnection) => Iterator[U]): Iterator[U] = {
+                                       mp: (Iterator[K], Connection) => Iterator[U]): Iterator[U] = {
 
     val config = getConf(configBroadcast)
     applyCreds(configBroadcast)
-    val hConnection = HConnectionManager.createConnection(config)
-
-    val res = mp(it, hConnection)
-    hConnection.close()
+    val connection = ConnectionFactory.createConnection(config);
+    val res = mp(it, connection)
+    connection.close()
     res
 
   }
@@ -700,8 +699,9 @@ class HBaseContext(@transient sc: SparkContext,
                                       makeGet: (T) => Get,
                                       convertResult: (Result) => U) extends Serializable {
 
-    def run(iterator: Iterator[T], hConnection: HConnection): Iterator[U] = {
-      val htable = hConnection.getTable(tableName)
+    def run(iterator: Iterator[T], connection: Connection): Iterator[U] = {
+     
+      val htable = connection.getTable(TableName.valueOf(tableName));
 
       val gets = new ArrayList[Get]()
       var res = List[U]()

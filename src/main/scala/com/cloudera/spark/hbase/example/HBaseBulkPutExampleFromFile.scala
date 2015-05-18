@@ -63,7 +63,7 @@ object HBaseBulkPutExampleFromFile {
           (putRecord) => {
             System.out.println("hbase-" + putRecord)
             val put = new Put(Bytes.toBytes("Value- " + putRecord))
-            put.add(Bytes.toBytes("c"), Bytes.toBytes("1"), Bytes.toBytes(putRecord.length()))
+            put.addColumn(Bytes.toBytes("c"), Bytes.toBytes("1"), Bytes.toBytes(putRecord.length()))
             put
           },
           true);

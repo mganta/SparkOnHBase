@@ -25,6 +25,7 @@ import org.apache.hadoop.hbase.client.Get
 import org.apache.hadoop.hbase.client.Result
 import org.apache.spark.SparkConf
 import com.cloudera.spark.hbase.HBaseContext
+import org.apache.hadoop.hbase.CellUtil
 
 object HBaseBulkGetExample {
   def main(args: Array[String]) {
@@ -65,18 +66,19 @@ object HBaseBulkGetExample {
       },
       (result: Result) => {
 
-        val it = result.list().iterator()
+        val it = result.listCells().iterator()
         val b = new StringBuilder
 
         b.append(Bytes.toString(result.getRow()) + ":")
 
         while (it.hasNext()) {
           val kv = it.next()
-          val q = Bytes.toString(kv.getQualifier())
+          val q = Bytes.toString(CellUtil.cloneQualifier(kv))
           if (q.equals("counter")) {
-            b.append("(" + Bytes.toString(kv.getQualifier()) + "," + Bytes.toLong(kv.getValue()) + ")")
+            
+            b.append("(" + Bytes.toString(CellUtil.cloneQualifier(kv)) + "," + Bytes.toLong(CellUtil.cloneValue(kv)) + ")")
           } else {
-            b.append("(" + Bytes.toString(kv.getQualifier()) + "," + Bytes.toString(kv.getValue()) + ")")  
+            b.append("(" + Bytes.toString(CellUtil.cloneQualifier(kv)) + "," + Bytes.toString(CellUtil.cloneValue(kv)) + ")")  
           }
         }
         b.toString

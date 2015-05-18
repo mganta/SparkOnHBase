@@ -9,8 +9,8 @@ import com.cloudera.spark.hbase.example.JavaHBaseBulkIncrementExample.IncrementF
 import java.util.*;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.HBaseTestingUtility;
-import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
@@ -18,7 +18,9 @@ import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.spark.api.java.*;
 import org.apache.spark.api.java.function.Function;
+
 import com.cloudera.spark.hbase.JavaHBaseContext;
+
 import org.junit.*;
 
 import scala.Tuple2;
@@ -27,6 +29,7 @@ import scala.Tuple3;
 import com.google.common.io.Files;
 
 public class JavaHBaseContextSuite implements Serializable {
+  private static final long serialVersionUID = 1L;
   private transient JavaSparkContext jsc;
   private transient File tempDir;
   HBaseTestingUtility htu;
@@ -135,7 +138,7 @@ public class JavaHBaseContextSuite implements Serializable {
       String[] cells = v.split(",");
       Put put = new Put(Bytes.toBytes(cells[0]));
 
-      put.add(Bytes.toBytes(cells[1]), Bytes.toBytes(cells[2]),
+      put.addColumn(Bytes.toBytes(cells[1]), Bytes.toBytes(cells[2]),
           Bytes.toBytes(cells[3]));
       return put;
     }
@@ -208,20 +211,20 @@ public class JavaHBaseContextSuite implements Serializable {
     private static final long serialVersionUID = 1L;
 
     public String call(Result result) throws Exception {
-      Iterator<KeyValue> it = result.list().iterator();
+      Iterator<Cell> it = result.listCells().iterator();
       StringBuilder b = new StringBuilder();
 
       b.append(Bytes.toString(result.getRow()) + ":");
 
       while (it.hasNext()) {
-        KeyValue kv = it.next();
-        String q = Bytes.toString(kv.getQualifier());
+        Cell kv = it.next();
+        String q = Bytes.toString(kv.getQualifierArray());
         if (q.equals("counter")) {
-          b.append("(" + Bytes.toString(kv.getQualifier()) + ","
-              + Bytes.toLong(kv.getValue()) + ")");
+          b.append("(" + Bytes.toString(kv.getQualifierArray()) + ","
+              + Bytes.toLong(kv.getValueArray()) + ")");
         } else {
-          b.append("(" + Bytes.toString(kv.getQualifier()) + ","
-              + Bytes.toString(kv.getValue()) + ")");
+          b.append("(" + Bytes.toString(kv.getQualifierArray()) + ","
+              + Bytes.toString(kv.getValueArray()) + ")");
         }
       }
       return b.toString();

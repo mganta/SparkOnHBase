@@ -7,16 +7,19 @@ import java.util.List;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HBaseTestingUtility;
+import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.Get;
-import org.apache.hadoop.hbase.client.HConnection;
-import org.apache.hadoop.hbase.client.HTableInterface;
+import org.apache.hadoop.hbase.client.Connection;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
+import org.apache.hadoop.hbase.client.Table;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.function.VoidFunction;
+
 import com.cloudera.spark.hbase.JavaHBaseContext;
+
 import org.junit.After;
 
 import scala.Tuple2;
@@ -49,12 +52,12 @@ public class TestJavaLocalMainExample {
     JavaRDD<byte[]> rdd = jsc.parallelize(list);
  
 
-    hbaseContext.foreachPartition(rdd,  new VoidFunction<Tuple2<Iterator<byte[]>, HConnection>>() {
+    hbaseContext.foreachPartition(rdd,  new VoidFunction<Tuple2<Iterator<byte[]>, Connection>>() {
+      private static final long serialVersionUID = 1L;
 
-
-      public void call(Tuple2<Iterator<byte[]>, HConnection> t)
+      public void call(Tuple2<Iterator<byte[]>, Connection> t)
               throws Exception {
-        HTableInterface table1 = t._2().getTable(Bytes.toBytes("Foo"));
+        Table table1 = t._2().getTable(TableName.valueOf(Bytes.toBytes("Foo")));
 
         Iterator<byte[]> it = t._1();
 
@@ -69,11 +72,12 @@ public class TestJavaLocalMainExample {
     });
 
     //This is me
-    hbaseContext.foreach(rdd, new VoidFunction<Tuple2<byte[], HConnection>>() {
+    hbaseContext.foreach(rdd, new VoidFunction<Tuple2<byte[], Connection>>() {
+      private static final long serialVersionUID = 1L;
 
-      public void call(Tuple2<byte[], HConnection> t)
+      public void call(Tuple2<byte[], Connection> t)
           throws Exception {
-        HTableInterface table1 = t._2().getTable(Bytes.toBytes("Foo"));
+        Table table1 = t._2().getTable(TableName.valueOf(Bytes.toBytes("Foo")));
         
         byte[] b = t._1();
         Result r = table1.get(new Get(b));

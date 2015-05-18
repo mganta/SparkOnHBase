@@ -24,6 +24,7 @@ import java.util.ArrayList
 import org.apache.hadoop.security.UserGroupInformation
 import org.apache.hadoop.security.UserGroupInformation.AuthenticationMethod
 import org.apache.hadoop.hbase.mapreduce.IdentityTableMapper
+import org.apache.hadoop.hbase.CellUtil
 
 class HBaseScanRDD(sc: SparkContext,
                    @transient tableName: String,
@@ -94,7 +95,8 @@ class HBaseScanRDD(sc: SparkContext,
       reader.initialize(split.serializableHadoopSplit.value, hadoopAttemptContext)
 
       // Register an on-task-completion callback to close the input stream.
-      context.addOnCompleteCallback(() => close())
+      context.addTaskCompletionListener(context => reader.close())
+      
       var havePair = false
       var finished = false
 
@@ -112,13 +114,13 @@ class HBaseScanRDD(sc: SparkContext,
         }
         havePair = false
 
-        val it = reader.getCurrentValue.list().iterator()
+        val it = reader.getCurrentValue.listCells().iterator()
 
         val list = new ArrayList[(Array[Byte], Array[Byte], Array[Byte])]()
 
         while (it.hasNext()) {
           val kv = it.next()
-          list.add((kv.getFamily(), kv.getQualifier(), kv.getValue()))
+          list.add((CellUtil.cloneFamily(kv), CellUtil.cloneQualifier(kv), CellUtil.cloneValue(kv)))
         }
         (reader.getCurrentKey.copyBytes(), list)
       }

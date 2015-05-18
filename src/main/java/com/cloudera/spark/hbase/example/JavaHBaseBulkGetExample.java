@@ -6,6 +6,8 @@ import java.util.List;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hbase.Cell;
+import org.apache.hadoop.hbase.CellUtil;
 import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.client.Get;
@@ -14,6 +16,7 @@ import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.function.Function;
+
 import com.cloudera.spark.hbase.JavaHBaseContext;
 
 public class JavaHBaseBulkGetExample {
@@ -63,20 +66,21 @@ public class JavaHBaseBulkGetExample {
     private static final long serialVersionUID = 1L;
 
     public String call(Result result) throws Exception {
-      Iterator<KeyValue> it = result.list().iterator();
+      
+      Iterator<Cell> it = result.listCells().iterator();
       StringBuilder b = new StringBuilder();
 
       b.append(Bytes.toString(result.getRow()) + ":");
 
       while (it.hasNext()) {
-        KeyValue kv = it.next();
-        String q = Bytes.toString(kv.getQualifier());
+        Cell kv = it.next();
+        String q = Bytes.toString(CellUtil.cloneQualifier(kv));
         if (q.equals("counter")) {
-          b.append("(" + Bytes.toString(kv.getQualifier()) + ","
-              + Bytes.toLong(kv.getValue()) + ")");
+          b.append("(" + Bytes.toString(CellUtil.cloneQualifier(kv)) + ","
+              + Bytes.toLong(CellUtil.cloneValue(kv)) + ")");
         } else {
-          b.append("(" + Bytes.toString(kv.getQualifier()) + ","
-              + Bytes.toString(kv.getValue()) + ")");
+          b.append("(" + Bytes.toString(CellUtil.cloneQualifier(kv)) + ","
+              + Bytes.toString(CellUtil.cloneValue(kv)) + ")");
         }
       }
       return b.toString();

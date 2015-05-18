@@ -50,6 +50,7 @@ public class JavaHBaseStreamingBulkPutExample {
     JavaHBaseContext hbaseContext = new JavaHBaseContext(jsc, conf);
 
     hbaseContext.streamBulkPut(javaDstream, tableName, new PutFunction(), true);
+    
   }
 
   public static class PutFunction implements Function<String, Put> {
@@ -60,7 +61,7 @@ public class JavaHBaseStreamingBulkPutExample {
       String[] cells = v.split(",");
       Put put = new Put(Bytes.toBytes(cells[0]));
 
-      put.add(Bytes.toBytes(cells[1]), Bytes.toBytes(cells[2]),
+      put.addColumn(Bytes.toBytes(cells[1]), Bytes.toBytes(cells[2]),
           Bytes.toBytes(cells[3]));
       return put;
     }

@@ -5,7 +5,7 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.spark.api.java.JavaRDD
 import org.apache.spark.api.java.function.VoidFunction
 import org.apache.spark.api.java.function.Function
-import org.apache.hadoop.hbase.client.HConnection
+import org.apache.hadoop.hbase.client.Connection
 import org.apache.spark.streaming.api.java.JavaDStream
 import org.apache.spark.api.java.function.FlatMapFunction
 import scala.collection.JavaConversions._
@@ -36,19 +36,19 @@ class JavaHBaseContext(@transient jsc: JavaSparkContext,
    *                with HBase
    */
   def foreachPartition[T](javaRdd: JavaRDD[T],
-    f: VoidFunction[(java.util.Iterator[T], HConnection)] ) = {
+    f: VoidFunction[(java.util.Iterator[T], Connection)] ) = {
     
     hbc.foreachPartition(javaRdd.rdd, 
-        (iterator:Iterator[T], hConnection) => 
-          { f.call((iterator, hConnection))})
+        (iterator:Iterator[T], connection) => 
+          { f.call((iterator, connection))})
   } 
   
   def foreach[T](javaRdd: JavaRDD[T],
-    f: VoidFunction[(T, HConnection)] ) = {
+    f: VoidFunction[(T, Connection)] ) = {
     
     hbc.foreachPartition(javaRdd.rdd, 
-        (iterator:Iterator[T], hConnection) =>
-          iterator.foreach(a => f.call((a, hConnection))))
+        (iterator:Iterator[T], connection) =>
+          iterator.foreach(a => f.call((a, connection))))
           
           //{ f.call((iterator, hConnection))})
   }
@@ -67,8 +67,8 @@ class JavaHBaseContext(@transient jsc: JavaSparkContext,
    *                    interact with HBase
    */
   def foreachRDD[T](javaDstream: JavaDStream[T],
-    f: VoidFunction[(Iterator[T], HConnection)]) = {
-    hbc.foreachRDD(javaDstream.dstream, (it:Iterator[T], hc: HConnection) => f.call(it, hc))
+    f: VoidFunction[(Iterator[T], Connection)]) = {
+    hbc.foreachRDD(javaDstream.dstream, (it:Iterator[T], hc: Connection) => f.call(it, hc))
   }
   
     /**
@@ -90,15 +90,15 @@ class JavaHBaseContext(@transient jsc: JavaSparkContext,
    *                function just like normal mapPartition
    */
   def mapPartition[T,R](javaRdd: JavaRDD[T],
-    mp: FlatMapFunction[(java.util.Iterator[T], HConnection),R] ): JavaRDD[R] = {
+    mp: FlatMapFunction[(java.util.Iterator[T], Connection),R] ): JavaRDD[R] = {
      
-    def fn = (x: Iterator[T], hc: HConnection) => 
+    def fn = (x: Iterator[T], hc: Connection) => 
       asScalaIterator(
           mp.call((asJavaIterator(x), hc)).iterator()
         )
     
     JavaRDD.fromRDD(hbc.mapPartition(javaRdd.rdd, 
-        (iterator:Iterator[T], hConnection:HConnection) => 
+        (iterator:Iterator[T], hConnection:Connection) => 
           fn(iterator, hConnection))(fakeClassTag[R]))(fakeClassTag[R])
   }  
   
@@ -123,9 +123,9 @@ class JavaHBaseContext(@transient jsc: JavaSparkContext,
    *                    definition function just like normal mapPartition
    */
   def streamMap[T, U](javaDstream: JavaDStream[T],
-      mp: Function[(Iterator[T], HConnection), Iterator[U]]): JavaDStream[U] = {
+      mp: Function[(Iterator[T], Connection), Iterator[U]]): JavaDStream[U] = {
     JavaDStream.fromDStream(hbc.streamMap(javaDstream.dstream, 
-        (it: Iterator[T], hc: HConnection) => 
+        (it: Iterator[T], hc: Connection) => 
          mp.call(it, hc) )(fakeClassTag[U]))(fakeClassTag[U])
   }
   

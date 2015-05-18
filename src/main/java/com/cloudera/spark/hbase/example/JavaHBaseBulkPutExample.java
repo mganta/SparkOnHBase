@@ -54,7 +54,7 @@ public class JavaHBaseBulkPutExample {
       String[] cells = v.split(",");
       Put put = new Put(Bytes.toBytes(cells[0]));
 
-      put.add(Bytes.toBytes(cells[1]), Bytes.toBytes(cells[2]),
+      put.addColumn(Bytes.toBytes(cells[1]), Bytes.toBytes(cells[2]),
           Bytes.toBytes(cells[3]));
       return put;
     }
